@@ -162,7 +162,6 @@ cython_debug/
 EleutherAI_*
 gpt2*
 meta*
-ptb*
 pythia*
 stanza*
 test*
@@ -171,3 +170,4 @@ unsupervised*
 ananthag*
 train_head*
 wandb*
+ptb_dep_data.pkl
