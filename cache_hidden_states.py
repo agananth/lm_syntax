@@ -1,22 +1,13 @@
 import argparse
-from transformers import (
-    AutoModel,
-    AutoTokenizer,
-    GPTNeoXTokenizerFast,
-    LlamaTokenizer,
-    GPT2Tokenizer,
-    set_seed,
-)
-import torch
-
+import os
 from collections.abc import Sequence
-from stanza.models.constituency import tree_reader
-from stanza.models.constituency import parse_tree
-import os
-import numpy as np
-from tqdm import tqdm
-import os
 
+import numpy as np
+import torch
+from stanza.models.constituency import parse_tree, tree_reader
+from tqdm import tqdm
+from transformers import (AutoModel, AutoTokenizer, GPT2Tokenizer,
+                          GPTNeoXTokenizerFast, LlamaTokenizer, set_seed)
 
 set_seed(42)
 
@@ -160,7 +151,9 @@ def main(parser):
     num_layers = _get_num_layers(model)
     hidden_size = model.config.hidden_size
 
-    folder_path = os.path.join("nlp/scr/ananthag/", "hidden_states", model_name)
+    folder_path = os.path.join(
+        "/nlp/scr/ananthag/", "hidden_states", model_name.replace("/", "_")
+    )
     if os.path.exists(folder_path):
         os.rmdir(folder_path)
     os.makedirs(folder_path)
@@ -205,7 +198,9 @@ def main(parser):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, required=True, help="HF base model name")
+    parser.add_argument(
+        "--model", "-m", type=str, required=True, help="HF base model name"
+    )
     parser.add_argument("--batch_size", type=int, default=512)
 
     main(parser)
