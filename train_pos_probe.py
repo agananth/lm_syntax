@@ -6,6 +6,7 @@ import torch.nn as nn
 from stanza.models.constituency import parse_tree, tree_reader
 from torch.utils.data import DataLoader
 from transformers import AutoConfig
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 
 import train
 import wandb
@@ -40,6 +41,7 @@ def main(parser):
         eval_interval=args.eval_interval,
         log_interval=args.log_interval,
         num_classes=num_tags,
+        restart_interval=args.restart_interval,
     )
 
     train_data_loader = DataLoader(
@@ -76,7 +78,7 @@ def main(parser):
         shuffle=False,
     )
 
-    wandb.init(project="Part of Speech Sweeps", name=model_name, config=config)
+    wandb.init(project="Tree Depth Dev", name=model_name, config=config)
 
     probe_train_states = []
     for layer in range(num_layers):
@@ -84,15 +86,19 @@ def main(parser):
             in_features=model_config.hidden_size, out_features=num_tags, bias=False
         )
         probe.cuda()
+        optimizer = torch.optim.AdamW(probe.parameters(), lr=args.lr)
         probe_train_states.append(
             train.ProbeTrainState(
                 layer=layer,
                 probe=probe,
-                optimizer=torch.optim.AdamW(probe.parameters(), lr=args.lr),
+                optimizer=optimizer,
                 early_stopping_metric=train.EarlyStoppingMetric(
                     name="f1_weighted", is_lower_better=False
                 ),
                 best_metric_value=float("-inf"),
+                scheduler=CosineAnnealingWarmRestarts(
+                    optimizer, T_0=args.restart_interval
+                ),
             )
         )
 
@@ -118,5 +124,6 @@ if __name__ == "__main__":
     parser.add_argument("-patience", type=int, default=20)
     parser.add_argument("-eval_interval", type=int, default=10)
     parser.add_argument("-log_interval", type=int, default=10)
+    parser.add_argument("-restart_interval", type=int, default=1)
 
     main(parser)

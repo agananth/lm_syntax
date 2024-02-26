@@ -34,10 +34,11 @@ class ProbeTrainState:
     optimizer: torch.optim.Optimizer
     early_stopping_metric: EarlyStoppingMetric
     best_metric_value: float
-    num_without_metric_improvement: int = -1
+    num_without_metric_improvement: int = 0
     best_probe: nn.Module | None = None
     step: int = 0
     training_complete: bool = False
+    scheduler: torch.optim.lr_scheduler.LRScheduler | None = None
 
 
 def _calculate_per_cls_counts(flattened_preds, flattened_labels):
@@ -135,6 +136,7 @@ def train_probes(
     model_name = config["model_name"]
     label = config["label"]
     for epoch in range(config["max_epochs"]):
+        iters = len(train_data_loader)
         for batch in train_data_loader:
             probes_to_eval = []
             for probe_train_state in probe_train_states:
@@ -196,15 +198,20 @@ def train_probes(
                 optimizer = probe_train_state.optimizer
                 optimizer.step()
                 optimizer.zero_grad()
+                # epoch + probe_train_state.step / iters)
 
                 if probe_train_state.step % log_interval == 0:
                     wandb.log(
-                        {f"layer_{probe_train_state.layer}/train/loss": loss},
+                        {
+                            f"layer_{probe_train_state.layer}/train/loss": loss,
+                            "lr": probe_train_state.scheduler.get_last_lr()[0],
+                        },
                         step=probe_train_state.step,
                     )
                 probe_train_state.step += 1
         else:
             print(f"Completed epoch {epoch}")
+            probe_train_state.scheduler.step()
             continue
         break
 

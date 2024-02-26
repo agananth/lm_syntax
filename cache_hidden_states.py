@@ -6,8 +6,14 @@ import numpy as np
 import torch
 from stanza.models.constituency import parse_tree, tree_reader
 from tqdm import tqdm
-from transformers import (AutoModel, AutoTokenizer, GPT2Tokenizer,
-                          GPTNeoXTokenizerFast, LlamaTokenizer, set_seed)
+from transformers import (
+    AutoModel,
+    AutoTokenizer,
+    GPT2Tokenizer,
+    GPTNeoXTokenizerFast,
+    LlamaTokenizer,
+    set_seed,
+)
 
 set_seed(42)
 
@@ -87,7 +93,7 @@ def _get_pre_tokenized_info(tokenizer, input_str: str):
     return idxs
 
 
-def _get_word_hidden_states(input_batch, tokenizer, model):
+def get_word_hidden_states(input_batch, tokenizer, model):
     token_input = tokenizer(input_batch, padding=True, return_tensors="pt").to("cuda")
     with torch.inference_mode():
         token_hidden_states_batch = model(
@@ -171,7 +177,7 @@ def main(parser):
         for i in tqdm(range(0, len(input_strs), batch_size)):
             input_batch = input_strs[i : i + batch_size]
 
-            word_level_hidden_states_batch = _get_word_hidden_states(
+            word_level_hidden_states_batch = get_word_hidden_states(
                 input_batch=input_batch,
                 tokenizer=tokenizer,
                 model=model,

@@ -168,6 +168,8 @@ test*
 utils*
 unsupervised*
 ananthag*
-train_head*
 wandb*
 ptb_dep_data.pkl
+train.py
+train_pos_probe.py
+train_tree_depth_probe.py
