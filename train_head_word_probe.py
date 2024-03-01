@@ -6,7 +6,7 @@ import wandb
 
 import dataclasses
 from collections.abc import Sequence, Mapping
-from sklearn.metrics import f1_score, accuracy_score, balanced_accuracy_score
+from sklearn.metrics import f1_score, accuracy_score
 import os
 import cache_hidden_states
 import dataset
@@ -37,12 +37,13 @@ def _run_eval_inference(
         hidden_states = torch.cat((root_hidden_states, hidden_states), dim=1).cuda()
         labels = torch.tensor([0] + labels)
         flattened_labels.extend(labels.tolist())
+        labels = labels.cuda()
         for j, probe_train_state in enumerate(probe_train_states):
             layer = probe_train_state.layer
             probe = probe_train_state.probe
             probe.eval()
             with torch.inference_mode():
-                logits = F.normalize(probe(hidden_states[layer])).cpu()
+                logits = probe(hidden_states[layer])
             distances = -torch.cdist(logits, logits)
             # Exclude root from masking
             mask = F.pad(torch.eye(distances.shape[0] - 1), (1, 0, 1, 0)).bool()
@@ -77,13 +78,9 @@ def train_probes(
     config: dict[str, Any],
     train_data_loader: DataLoader,
     val_data_loader: DataLoader,
-    test_data_loader: DataLoader,
     root_hidden_states,
 ):
-    del test_data_loader  # use only when we're ready for final eval
     eval_interval = config["eval_interval"]
-    log_interval = config["log_interval"]
-    model_name = config["model_name"]
     grad_accum_steps = config["batch_size"]
     for epoch in range(config["max_epochs"]):
         for batch in train_data_loader:
@@ -139,43 +136,42 @@ def train_probes(
             hidden_states = rearrange(hidden_states, "1 w l h -> l w h")
             # add the root to the hidden states
             hidden_states = torch.cat((root_hidden_states, hidden_states), dim=1).cuda()
-            labels = torch.tensor([0] + labels)
+            labels = torch.tensor([0] + labels).cuda()
             for probe_train_state in remaining_probe_train_states:
                 layer = probe_train_state.layer
                 probe = probe_train_state.probe
                 probe.train()
 
-                logits = F.normalize(probe(hidden_states[layer])).cpu()
+                logits = probe(hidden_states[layer])
                 distances = -torch.cdist(logits, logits)
                 # Exclude root from masking
                 mask = F.pad(torch.eye(distances.shape[0] - 1), (1, 0, 1, 0)).bool()
                 distances[mask] = float("-inf")
-                loss = F.cross_entropy(distances, labels) / grad_accum_steps
+                loss = F.cross_entropy(distances, labels)
+                probe_train_state.train_losses.append(loss.item())
+                loss = loss / grad_accum_steps
                 loss.backward()
-                if (
-                    probe_train_state.step
-                    and probe_train_state.step % grad_accum_steps == 0
-                ):
+                if (probe_train_state.step + 1) % grad_accum_steps == 0:
                     optimizer = probe_train_state.optimizer
                     optimizer.step()
                     optimizer.zero_grad()
 
-                if probe_train_state.step % log_interval == 0:
                     wandb.log(
                         {
-                            f"layer_{probe_train_state.layer}/train/loss": loss
-                            * grad_accum_steps,
-                            # "lr": probe_train_state.scheduler.get_last_lr()[0],
+                            f"layer_{probe_train_state.layer}/train/loss": torch.tensor(
+                                probe_train_state.train_losses
+                            ).mean()
                         },
                         step=probe_train_state.step,
                     )
+                    probe_train_state.train_losses.clear()
                 probe_train_state.step += 1
         else:
             print(f"Completed epoch {epoch}")
-            probe_train_state.scheduler.step()
             continue
         break
 
+    model_name = config["model_name"]
     dir_name = os.path.join("head_word", model_name.replace("/", "_"))
     os.makedirs(dir_name, exist_ok=True)
     for probe_train_state in probe_train_states:
@@ -185,7 +181,7 @@ def train_probes(
             f,
         )
         artifact = wandb.Artifact(
-            f"probe_layer_{probe_train_state.layer}", type="model"
+            f"{model_name.replace("/", "_")}_probe_layer_{probe_train_state.layer}", type="model"
         )
         artifact.add_file(f)
         wandb.log_artifact(artifact)
@@ -218,7 +214,7 @@ def main(parser):
         hidden_size=model.config.hidden_size,
         num_layers=num_layers,
         eval_interval=args.batch_size * 2,
-        log_interval=args.batch_size // 2,
+        log_interval=args.batch_size,
         probe_hidden_size=probe_hidden_size,
     )
 
@@ -244,16 +240,7 @@ def main(parser):
         shuffle=False,
     )
 
-    test_data_loader = DataLoader(
-        dataset.HeadWordDataset(
-            split_name="test",
-            model_name=model_name,
-            num_layers=num_layers,
-            hidden_size=model.config.hidden_size,
-        ),
-        batch_size=1,
-        shuffle=False,
-    )
+    wandb.init(project="Head Word New Sweeps", name=model_name, config=config)
 
     probe_train_states = []
     for layer in range(num_layers):
@@ -261,11 +248,12 @@ def main(parser):
             in_features=hidden_size, out_features=probe_hidden_size, bias=False
         )
         probe.cuda()
+        optimizer = torch.optim.AdamW(probe.parameters(), lr=args.lr)
         probe_train_states.append(
             train.ProbeTrainState(
                 layer=layer,
                 probe=probe,
-                optimizer=torch.optim.AdamW(probe.parameters(), lr=args.lr),
+                optimizer=optimizer,
                 early_stopping_metric=train.EarlyStoppingMetric(
                     name="acc", is_lower_better=False
                 ),
@@ -273,14 +261,11 @@ def main(parser):
             )
         )
 
-    wandb.init(project="Head Word Sweeps", name=model_name, config=config)
-
     train_probes(
         probe_train_states=probe_train_states,
         config=config,
         train_data_loader=train_data_loader,
         val_data_loader=val_data_loader,
-        test_data_loader=test_data_loader,
         root_hidden_states=root_hidden_state,
     )
 

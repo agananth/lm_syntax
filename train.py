@@ -39,6 +39,7 @@ class ProbeTrainState:
     step: int = 0
     training_complete: bool = False
     scheduler: torch.optim.lr_scheduler.LRScheduler | None = None
+    train_losses: list[float] = dataclasses.field(default_factory=list)
 
 
 def _calculate_per_cls_counts(flattened_preds, flattened_labels):
@@ -61,12 +62,13 @@ def _run_eval_inference(
         hidden_states, labels = batch
         hidden_states = rearrange(hidden_states, "b l h -> l b h").cuda()
         flattened_labels.extend(labels.tolist())
+        labels = labels.cuda()
         for j, probe_train_state in enumerate(probe_train_states):
             layer = probe_train_state.layer
             probe = probe_train_state.probe
             probe.eval()
             with torch.inference_mode():
-                logits = probe(hidden_states[layer]).cpu()
+                logits = probe(hidden_states[layer])
             preds = logits.softmax(dim=-1).argmax(dim=-1)
             flattened_preds[j].extend(preds.tolist())
             losses[j].append(F.cross_entropy(logits, labels).item())
@@ -188,11 +190,12 @@ def train_probes(
                 break
             hidden_states, labels = batch
             hidden_states = rearrange(hidden_states, "b l h -> l b h").cuda()
+            labels = labels.cuda()
             for probe_train_state in remaining_probe_train_states:
                 layer = probe_train_state.layer
                 probe = probe_train_state.probe
                 probe.train()
-                logits = probe(hidden_states[layer]).cpu()
+                logits = probe(hidden_states[layer])
                 loss = F.cross_entropy(logits, labels)
                 loss.backward()
                 optimizer = probe_train_state.optimizer

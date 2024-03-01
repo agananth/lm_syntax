@@ -2,7 +2,6 @@ import numpy as np
 from torch.utils.data import Dataset
 import utils
 import os
-from stanza.models.constituency import parse_tree, tree_reader
 import stanza_cache
 import dataclasses
 from collections.abc import Sequence, Mapping
@@ -92,7 +91,6 @@ class HeadWordDataset(Dataset):
         """
         Returns the length of the dataset.
         """
-        # return self.num_sentences
         return len(self.start_indices)
 
     def __getitem__(self, idx):
