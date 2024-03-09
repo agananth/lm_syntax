@@ -185,6 +185,8 @@ def train_probes(
         )
         artifact.add_file(f)
         wandb.log_artifact(artifact)
+        wandb.config[f'layer_{probe_train_state.layer}/best_acc'] = probe_train_state.best_metric_value
+        wandb.config[f'layer_{probe_train_state.layer}/step'] = probe_train_state.step - config["patience"]
     wandb.finish()
 
 
@@ -203,7 +205,7 @@ def main(parser):
     )[0]
     root_hidden_state = torch.cat(root_hidden_state, dim=0).unsqueeze(1)
     assert root_hidden_state.shape == (num_layers, 1, hidden_size)
-    probe_hidden_size = hidden_size // 2
+    probe_hidden_size = 256
 
     config = dict(
         lr=args.lr,
@@ -240,7 +242,7 @@ def main(parser):
         shuffle=False,
     )
 
-    wandb.init(project="Head Word New Sweeps", name=model_name, config=config)
+    wandb.init(project="Head Word Final", name=model_name, config=config)
 
     probe_train_states = []
     for layer in range(num_layers):
