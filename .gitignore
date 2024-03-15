@@ -159,17 +159,4 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-EleutherAI_*
-gpt2*
-meta*
-pythia*
-stanza*
-test*
-utils*
-unsupervised*
-ananthag*
-wandb*
-ptb_dep_data.pkl
-train.py
-train_pos_probe.py
-train_tree_depth_probe.py
+wandb/

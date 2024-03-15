@@ -1,6 +1,6 @@
 """Cloned from https://github.com/MurtyShikhar/Pushdown-Layers/blob/main/eval_utils/eval_surprisal.py and kept what is needed to run on base HF models."""
 
-from transformers import GPT2LMHeadModel, LlamaForCausalLM, GPTNeoXForCausalLM
+from transformers import AutoModelForCausalLM
 import numpy as np
 import re
 import json
@@ -10,6 +10,7 @@ import math
 import torch
 import utils
 import os
+import run_registry
 
 
 def eval_math_expr(expr):
@@ -137,21 +138,14 @@ class Evaluator:
         return target_surprisals
 
 
-def _get_model_cls(model_name):
-    if model_name.startswith("gpt2"):
-        return GPT2LMHeadModel
-    if model_name.startswith("meta-llama"):
-        return LlamaForCausalLM
-    assert model_name.startswith("EleutherAI/pythia")
-    return GPTNeoXForCausalLM
-
-
 def main():
     test_suite_dir = "sg_test_suites"
-    models = ["meta-llama/Llama-2-7b-hf"]
-    results = {model: {} for model in models}
+    models = list(run_registry.RUNS.keys())
+    results = {}
     for model in models:
-        lm = _get_model_cls(model).from_pretrained(model).cuda()
+        lm = AutoModelForCausalLM.from_pretrained(
+            model, token="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"
+        ).cuda()
         lm.eval()
         tokenizer = utils.get_tokenizer(model)
 
@@ -167,11 +161,12 @@ def main():
 
             acc /= len(test_suite_parser.answers)
             print(model, file_name, acc)
-            results[model][file_name] = acc
+            results[file_name] = acc
 
-    output_json = f"llama_surprisal.json"
-    with open(output_json, "a") as f:
-        json.dump(results, f)
+        lm = model.replace("/", "-")
+        output_json = f"surprisals/{lm}.json"
+        with open(output_json, "w") as f:
+            json.dump(results, f)
 
 
 if __name__ == "__main__":
