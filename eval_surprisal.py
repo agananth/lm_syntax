@@ -11,6 +11,7 @@ import torch
 import utils
 import os
 import run_registry
+import csv
 
 
 def eval_math_expr(expr):
@@ -141,32 +142,48 @@ class Evaluator:
 def main():
     test_suite_dir = "sg_test_suites"
     models = list(run_registry.RUNS.keys())
-    results = {}
-    for model in models:
-        lm = AutoModelForCausalLM.from_pretrained(
-            model, token="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"
-        ).cuda()
-        lm.eval()
-        tokenizer = utils.get_tokenizer(model)
+    with open("surprisals_errata.csv", "a", newline="") as csvfile:
+        field_names = ["model", "file_name", "item_number", "formula"]
+        writer = csv.DictWriter(csvfile, fieldnames=field_names)
+        writer.writeheader()
+        for model in models:
+            results = {}
+            lm = AutoModelForCausalLM.from_pretrained(
+                model, token="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"
+            ).cuda()
+            lm.eval()
+            tokenizer = utils.get_tokenizer(model)
 
-        eval_obj = Evaluator(lm, tokenizer)
+            eval_obj = Evaluator(lm, tokenizer)
 
-        for file_name in os.listdir(test_suite_dir):
-            test_suite_parser = TestSuiteParser(os.path.join(test_suite_dir, file_name))
-            test_suite_parser.evaluate_all(eval_obj)
+            for file_name in os.listdir(test_suite_dir):
+                test_suite_parser = TestSuiteParser(
+                    os.path.join(test_suite_dir, file_name)
+                )
+                test_suite_parser.evaluate_all(eval_obj)
 
-            acc = 0.0
-            for formula in test_suite_parser.answers:
-                acc += eval_math_expr(formula)
+                acc = 0.0
+                for i, formula in enumerate(test_suite_parser.answers):
+                    result = eval_math_expr(formula)
+                    acc += result
+                    if not bool(result):
+                        writer.writerow(
+                            dict(
+                                model=model,
+                                file_name=file_name,
+                                item_number=i + 1,
+                                formula=formula,
+                            )
+                        )
 
-            acc /= len(test_suite_parser.answers)
-            print(model, file_name, acc)
-            results[file_name] = acc
-
-        lm = model.replace("/", "-")
-        output_json = f"surprisals/{lm}.json"
-        with open(output_json, "w") as f:
-            json.dump(results, f)
+                acc /= len(test_suite_parser.answers)
+                results[file_name] = acc
+            print(results)
+            del lm
+            # lm = model.replace("/", "-")
+            # output_json = f"surprisals/{lm}.json"
+            # with open(output_json, "w") as f:
+            #     json.dump(results, f)
 
 
 if __name__ == "__main__":

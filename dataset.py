@@ -6,7 +6,7 @@ import stanza_cache
 import dataclasses
 from collections.abc import Sequence, Mapping
 
-_HIDDEN_STATE_CACHE_DIR = "/nlp/scr/ananthag/hidden_states"
+_HIDDEN_STATE_CACHE_DIR = "/scr/biggest/ananthag/hidden_states"
 
 
 @dataclasses.dataclass
@@ -80,6 +80,7 @@ class HeadWordDataset(Dataset):
             os.path.join(
                 _HIDDEN_STATE_CACHE_DIR,
                 model_name.replace("/", "_"),
+                f"layers_0_{num_layers}",
                 f"{split_name}.dat",
             ),
             "float32",
