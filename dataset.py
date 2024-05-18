@@ -107,3 +107,36 @@ class HeadWordDataset(Dataset):
             self.hidden_state_cache[start_index : start_index + len(self.labels[idx])],
             self.labels[idx],
         )
+
+
+class HeadWordDatasetWithRelns(HeadWordDataset):
+
+    def __init__(
+        self,
+        split_name: str,
+        model_name: str,
+        num_layers: int,
+        hidden_size: int,
+    ):
+        data = getattr(stanza_cache, f"cached_ptb_{split_name}")()
+        self.start_indices = {}
+        total_words = 0
+        self.labels = []
+        for i, dev_data in enumerate(data):
+            self.start_indices[i] = total_words
+            label_list = []
+            for head, reln in zip(dev_data["heads"], dev_data["relns"]):
+                total_words += 1
+                label_list.append((head, reln))
+            self.labels.append(label_list)
+        self.hidden_state_cache = np.memmap(
+            os.path.join(
+                _HIDDEN_STATE_CACHE_DIR,
+                model_name.replace("/", "_"),
+                f"layers_0_{num_layers}",
+                f"{split_name}.dat",
+            ),
+            "float32",
+            mode="r",
+            shape=(total_words, num_layers, hidden_size),
+        )

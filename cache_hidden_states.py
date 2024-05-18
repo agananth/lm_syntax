@@ -14,6 +14,7 @@ from transformers import (
     LlamaTokenizer,
     set_seed,
 )
+import utils
 
 set_seed(42)
 
@@ -49,28 +50,6 @@ def get_idxs(phrase_tokens, sent_tokens, st):
     )
 
 
-def is_pythia_tokenizer(tokenizer):
-    return isinstance(tokenizer, GPTNeoXTokenizerFast)
-
-
-def is_llama_tokenizer(tokenizer):
-    return isinstance(tokenizer, LlamaTokenizer)
-
-
-def get_tokenized_word(tokenizer, word: str, index: int):
-    if is_pythia_tokenizer(tokenizer):
-        if index:
-            word = " " + word
-        return tokenizer(word).input_ids
-    elif is_llama_tokenizer(tokenizer):
-        assert tokenizer.add_bos_token
-        input_ids = tokenizer(word).input_ids
-        assert input_ids.pop(0) == tokenizer.bos_token_id
-        return input_ids
-    assert isinstance(tokenizer, GPT2Tokenizer)
-    return tokenizer(word, add_prefix_space=bool(index)).input_ids
-
-
 def _get_pre_tokenized_info(tokenizer, input_str: str):
     """
     e.g.
@@ -86,7 +65,7 @@ def _get_pre_tokenized_info(tokenizer, input_str: str):
     st = 0
     for i, word in enumerate(words):
         # GPT2 tokenizer treats spaces like parts of the tokens
-        word_tokenized = get_tokenized_word(tokenizer, word=word, index=i)
+        word_tokenized = utils.get_tokenized_word(tokenizer, word=word, index=i)
         st_curr, en_curr = get_idxs(word_tokenized, sent_tokens, st)
         idxs.append((st_curr, en_curr))
         st = en_curr

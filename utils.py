@@ -26,6 +26,12 @@ def get_model(model_name: str):
     ).cuda()
 
 
+def get_num_layers(config):
+    if hasattr(config, "n_layer"):
+        return config.n_layer
+    return config.num_hidden_layers
+
+
 def get_idxs(phrase_tokens, sent_tokens, st):
     while st < len(sent_tokens):
         en = st + len(phrase_tokens)

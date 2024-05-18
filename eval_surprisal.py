@@ -141,11 +141,12 @@ class Evaluator:
 
 def main():
     test_suite_dir = "sg_test_suites"
-    models = list(run_registry.RUNS.keys())
+    # models = list(run_registry.RUNS.keys())
+    models = ["gpt2"]
     with open("surprisals_errata.csv", "a", newline="") as csvfile:
         field_names = ["model", "file_name", "item_number", "formula"]
-        writer = csv.DictWriter(csvfile, fieldnames=field_names)
-        writer.writeheader()
+        # writer = csv.DictWriter(csvfile, fieldnames=field_names)
+        # writer.writeheader()
         for model in models:
             results = {}
             lm = AutoModelForCausalLM.from_pretrained(
@@ -166,24 +167,24 @@ def main():
                 for i, formula in enumerate(test_suite_parser.answers):
                     result = eval_math_expr(formula)
                     acc += result
-                    if not bool(result):
-                        writer.writerow(
-                            dict(
-                                model=model,
-                                file_name=file_name,
-                                item_number=i + 1,
-                                formula=formula,
-                            )
-                        )
+                    # if not bool(result):
+                    #     writer.writerow(
+                    #         dict(
+                    #             model=model,
+                    #             file_name=file_name,
+                    #             item_number=i + 1,
+                    #             formula=formula,
+                    #         )
+                    #     )
 
                 acc /= len(test_suite_parser.answers)
                 results[file_name] = acc
             print(results)
-            del lm
-            # lm = model.replace("/", "-")
-            # output_json = f"surprisals/{lm}.json"
-            # with open(output_json, "w") as f:
-            #     json.dump(results, f)
+
+            lm = model.replace("/", "-")
+            output_json = f"surprisals/{lm}.json"
+            with open(output_json, "w") as f:
+                json.dump(results, f)
 
 
 if __name__ == "__main__":
