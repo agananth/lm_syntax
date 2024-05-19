@@ -1,0 +1,14 @@
+linguistics_term,accuracy
+island_effects,0.728
+anaphor_agreement,0.995
+s-selection,0.8355
+argument_structure,0.8248571428571428
+determiner_noun_agreement,0.94325
+subject_verb_agreement,0.8755000000000001
+ellipsis,0.8575
+control_raising,0.8084000000000001
+quantifiers,0.7692500000000001
+irregular_forms,0.9239999999999999
+npi_licensing,0.8140000000000001
+binding,0.8454285714285714
+filler_gap_dependency,0.743

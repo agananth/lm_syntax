@@ -1,0 +1,10 @@
+file_name,accuracy
+adjunct_island.jsonl,0.849
+anaphor_gender_agreement.jsonl,0.978
+anaphor_number_agreement.jsonl,0.968
+animate_subject_passive.jsonl,0.768
+animate_subject_trans.jsonl,0.859
+causative.jsonl,0.861
+complex_NP_island.jsonl,0.753
+coordinate_structure_constraint_complex_left_branch.jsonl,0.912
+coordinate_structure_constraint_object_extraction.jsonl,0.884

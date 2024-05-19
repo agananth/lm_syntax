@@ -12,7 +12,7 @@ from transformers import (
 def get_tokenizer(model_name: str):
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
-        use_fast="pythia" in model_name,
+        use_fast="pythia" in model_name or "olmo" in model_name.lower(),
         token="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",
     )
     if tokenizer.pad_token_id is None:
