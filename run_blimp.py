@@ -15,6 +15,44 @@ import argparse
 import csv
 from blimp_dataset import BlimpDataset
 import utils
+from huggingface_hub import hf_hub_download
+from DeBERTa.DeBERTa.apps.models import masked_language_model as deberta_mlm
+from DeBERTa.DeBERTa.deberta import config
+
+
+def _prepare_deberta(hf_model_name):
+    checkpoint_path = hf_hub_download(hf_model_name, "pytorch_model.bin")
+    ckpt = torch.load(checkpoint_path)
+    model = AutoModelForMaskedLM.from_pretrained(hf_model_name)
+    ckpt["cls.predictions.transform.dense.weight"] = ckpt.pop(
+        "lm_predictions.lm_head.dense.weight"
+    )
+    ckpt["cls.predictions.transform.dense.bias"] = ckpt.pop(
+        "lm_predictions.lm_head.dense.bias"
+    )
+    ckpt["cls.predictions.transform.LayerNorm.weight"] = ckpt.pop(
+        "lm_predictions.lm_head.LayerNorm.weight"
+    )
+    ckpt["cls.predictions.transform.LayerNorm.bias"] = ckpt.pop(
+        "lm_predictions.lm_head.LayerNorm.bias"
+    )
+    ckpt["cls.predictions.decoder.weight"] = ckpt[
+        "deberta.embeddings.word_embeddings.weight"
+    ]
+    ckpt["cls.predictions.decoder.bias"] = ckpt["lm_predictions.lm_head.bias"]
+    ckpt["cls.predictions.bias"] = ckpt.pop("lm_predictions.lm_head.bias")
+    model.load_state_dict(ckpt, strict=False)
+    return model
+
+
+# def _prepare_deberta(hf_model_name):
+#     config_json = hf_hub_download(hf_model_name, "config.json")
+#     d_config = config.ModelConfig.from_json_file(config_json)
+#     d_config.position_biased_input = True
+#     model = deberta_mlm.MaskedLanguageModel(d_config)
+#     checkpoint_path = hf_hub_download(hf_model_name, "pytorch_model.bin")
+#     model.load_state_dict(torch.load(checkpoint_path), strict=False)
+#     return model
 
 
 def _decoder_log_prob_sum(lm, tokenizer, input_text_batch):
@@ -55,14 +93,26 @@ def _encoder_log_prob_sum(lm, tokenizer, input_text_batch):
     masked_attention_mask = attention_mask.repeat(seq_length, 1)
     masked_input_ids.fill_diagonal_(tokenizer.mask_token_id)
 
+    labels = torch.diag(input_ids.squeeze())
+
     # Get the model's predictions for the batched masked inputs
     with torch.inference_mode():
-        logits = lm(masked_input_ids, attention_mask=masked_attention_mask).logits
+        if isinstance(lm, deberta_mlm.MaskedLanguageModel):
+            logits = lm(
+                input_ids=masked_input_ids,
+                labels=labels,
+                input_mask=masked_attention_mask,
+                attention_mask=masked_attention_mask,
+            )["logits"]
+            log_probs = F.log_softmax(logits, dim=-1)
+            token_log_probs = log_probs[torch.arange(seq_length), input_ids.squeeze()]
+        else:
+            logits = lm(masked_input_ids, attention_mask=masked_attention_mask).logits
 
-    log_probs = F.log_softmax(logits, dim=-1)
-    token_log_probs = log_probs[
-        torch.arange(seq_length), torch.arange(seq_length), input_ids.squeeze()
-    ]
+            log_probs = F.log_softmax(logits, dim=-1)
+            token_log_probs = log_probs[
+                torch.arange(seq_length), torch.arange(seq_length), input_ids.squeeze()
+            ]
     return token_log_probs.sum()
 
 
@@ -100,14 +150,14 @@ def _encoder_decoder_log_prob_sum(lm, tokenizer, input_text_batch):
 
 def main(parser):
     args = parser.parse_args()
-    if args.encoders:
+    if True:
         log_prob_f = _encoder_log_prob_sum
-        auto_model_f = AutoModelForCausalLM
+        auto_model_f = AutoModelForMaskedLM
         model_names = args.encoders
         batch_size = 1
     elif args.decoders:
         log_prob_f = _decoder_log_prob_sum
-        auto_model_f = AutoModelForMaskedLM
+        auto_model_f = AutoModelForCausalLM
         model_names = args.decoders
         batch_size = 256
     elif args.encoder_decoders:
@@ -115,13 +165,19 @@ def main(parser):
         auto_model_f = AutoModelForSeq2SeqLM
         model_names = args.encoder_decoders
         batch_size = 1
-    else:
-        raise ValueError("Must specify encoders, decoders, or encoder_decoders.")
+    # else:
+    #     raise ValueError("Must specify encoders, decoders, or encoder_decoders.")
 
     field_names = ["file_name", "accuracy"]
-    for model_name in model_names:
+    for model_name in ["FacebookAI/roberta-base"]:
         print(f"Running {model_name}")
-        lm = auto_model_f.from_pretrained(model_name).eval().cuda()
+        if "deberta" in model_name:
+            lm = _prepare_deberta(model_name)
+        else:
+            lm = auto_model_f.from_pretrained(
+                model_name, token="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"
+            )
+        lm = lm.eval().cuda()
         tokenizer = utils.get_tokenizer(model_name)
         aggregate_results = {}
         with open(

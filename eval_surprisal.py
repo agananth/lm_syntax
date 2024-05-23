@@ -1,6 +1,6 @@
 """Cloned from https://github.com/MurtyShikhar/Pushdown-Layers/blob/main/eval_utils/eval_surprisal.py and kept what is needed to run on base HF models."""
 
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoModelForMaskedLM
 import numpy as np
 import re
 import json
@@ -8,17 +8,19 @@ from tqdm import tqdm
 import math
 
 import torch
+import torch.nn.functional as F
 import utils
 import os
 import run_registry
 import csv
+import argparse
 
 
 def eval_math_expr(expr):
-    try:
-        return eval(expr)
-    except:
-        return math.nan
+    # try:
+    return eval(expr)
+    # except:
+    # return math.nan
 
 
 class TestSuiteParser:
@@ -69,7 +71,7 @@ class TestSuiteParser:
         examples = self.get_example(idx)
         phen2surprisals = {}
         for phen in examples:
-            target_surprisals = evaluator.get_surprisals(examples[phen])
+            target_surprisals = evaluator.get_surprisals_encoder(examples[phen])
             if verbose:
                 print("Regions: {}".format(examples[phen]))
                 print(target_surprisals)
@@ -99,7 +101,6 @@ class Evaluator:
         processed by the preprocessor, gives a valid input to the language model
         but some regions can be empty, so we need to take care of that
         """
-
         sent = " ".join([r.lstrip().rstrip() for r in regions if len(r) > 0])
         tokenized = self.tokenizer(sent, return_tensors="pt").to("cuda")
 
@@ -138,22 +139,74 @@ class Evaluator:
 
         return target_surprisals
 
+    def get_surprisals_encoder(self, regions, verbose=False):
+        """
+        regions: a list of regions which when concatenated with a period and
+        processed by the preprocessor, gives a valid input to the language model
+        but some regions can be empty, so we need to take care of that
+        """
+        sent = " ".join([r.lstrip().rstrip() for r in regions if len(r) > 0])
+        tokenized = self.tokenizer(sent, return_tensors="pt").to("cuda")
 
-def main():
+        all_target_idxs = []
+        st = 0
+        sent_tokens = tokenized.input_ids[0].tolist()
+        for idx, region in enumerate(regions):
+            region = region.lstrip().rstrip()
+            if not region:
+                all_target_idxs.append((st, st))
+                continue
+            word_tokenized = utils.get_tokenized_word(self.tokenizer, region, idx)
+            st_curr, en_curr = utils.get_idxs(word_tokenized, sent_tokens, st)
+            all_target_idxs.append((st_curr, en_curr))
+            st = en_curr
+
+        input_ids = tokenized.input_ids
+        attention_mask = tokenized.attention_mask
+        seq_length = input_ids.shape[1]
+
+        masked_input_ids = input_ids.repeat(seq_length, 1)
+        masked_attention_mask = attention_mask.repeat(seq_length, 1)
+        masked_input_ids.fill_diagonal_(self.tokenizer.mask_token_id)
+
+        with torch.inference_mode():
+            all_sent_logprobs = self.lm(
+                masked_input_ids, attention_mask=torch.tril(masked_attention_mask)
+            ).logits
+        log_probs = F.log_softmax(all_sent_logprobs, dim=-1)
+        token_log_probs = log_probs[
+            torch.arange(seq_length), torch.arange(seq_length), input_ids.squeeze()
+        ]
+        target_surprisals = [
+            -1.0 * torch.sum(token_log_probs[st:en], dim=0).item()
+            for st, en in all_target_idxs
+        ]
+
+        return target_surprisals
+
+
+def main(parser):
+    args = parser.parse_args()
+    if args.encoders:
+        auto_model_f = AutoModelForMaskedLM
+        model_names = args.encoders
+    elif args.decoders:
+        auto_model_f = AutoModelForCausalLM
+        model_names = args.decoders
+    else:
+        raise ValueError()
     test_suite_dir = "sg_test_suites"
-    # models = list(run_registry.RUNS.keys())
-    models = ["gpt2"]
     with open("surprisals_errata.csv", "a", newline="") as csvfile:
         field_names = ["model", "file_name", "item_number", "formula"]
         # writer = csv.DictWriter(csvfile, fieldnames=field_names)
         # writer.writeheader()
-        for model in models:
+        for model_name in model_names:
             results = {}
-            lm = AutoModelForCausalLM.from_pretrained(
-                model, token="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"
+            lm = auto_model_f.from_pretrained(
+                model_name, token="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"
             ).cuda()
             lm.eval()
-            tokenizer = utils.get_tokenizer(model)
+            tokenizer = utils.get_tokenizer(model_name)
 
             eval_obj = Evaluator(lm, tokenizer)
 
@@ -179,13 +232,20 @@ def main():
 
                 acc /= len(test_suite_parser.answers)
                 results[file_name] = acc
-            print(results)
+                print(acc)
 
-            lm = model.replace("/", "-")
-            output_json = f"surprisals/{lm}.json"
+            lm = model_name.replace("/", "-")
+            output_json = f"surprisals/{lm}_encoder_causal.json"
             with open(output_json, "w") as f:
                 json.dump(results, f)
 
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--encoders", type=str, nargs="+")
+    parser.add_argument("--decoders", type=str, nargs="+")
+    parser.add_argument("--encoder_decoders", type=str, nargs="+")
+    main(parser)

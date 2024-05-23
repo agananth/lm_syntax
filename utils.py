@@ -6,6 +6,7 @@ from transformers import (
     LlamaTokenizer,
     GPT2Tokenizer,
     GemmaTokenizer,
+    RobertaTokenizer,
 )
 
 
@@ -64,6 +65,10 @@ def is_phi_tokenizer(tokenizer):
     return "microsoft/phi-2" == tokenizer.name_or_path
 
 
+def is_roberta_tokenizer(tokenizer):
+    return isinstance(tokenizer, RobertaTokenizer)
+
+
 def get_tokenized_word(tokenizer, word: str, index: int):
     if (
         is_pythia_tokenizer(tokenizer)
@@ -84,6 +89,13 @@ def get_tokenized_word(tokenizer, word: str, index: int):
             word = " " + word
         input_ids = tokenizer(word).input_ids
         assert input_ids.pop(0) == tokenizer.bos_token_id
+        return input_ids
+    elif is_roberta_tokenizer(tokenizer):
+        if index:
+            word = " " + word
+        input_ids = tokenizer(word).input_ids
+        assert input_ids.pop(0) == tokenizer.bos_token_id
+        assert input_ids.pop() == tokenizer.eos_token_id
         return input_ids
     assert isinstance(tokenizer, GPT2Tokenizer)
     return tokenizer(word, add_prefix_space=bool(index)).input_ids
