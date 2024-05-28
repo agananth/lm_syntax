@@ -242,7 +242,7 @@ def main(parser):
         shuffle=False,
     )
 
-    wandb.init(project="Head Word Final", name=model_name, config=config)
+    wandb.init(project="Head Word Final 2", name=model_name, config=config)
 
     probe_train_states = []
     for layer in range(num_layers):
@@ -279,7 +279,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("-batch_size", type=int, default=1024)
     parser.add_argument("-lr", type=float, default=1e-2)
-    parser.add_argument("-max_epochs", type=int, default=10)
+    parser.add_argument("-max_epochs", type=int, default=50)
     parser.add_argument("-patience", type=int, default=20)
 
     main(parser)

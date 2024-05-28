@@ -7,6 +7,10 @@ from transformers import (
     GPT2Tokenizer,
     GemmaTokenizer,
     RobertaTokenizer,
+    ElectraTokenizer,
+    T5Tokenizer,
+    AutoConfig,
+    PreTrainedTokenizerFast,
 )
 
 
@@ -25,6 +29,10 @@ def get_model(model_name: str):
     return AutoModel.from_pretrained(
         model_name, token="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"
     ).cuda()
+
+
+def get_model_base_weights(model_name: str):
+    return AutoModel.from_config(AutoConfig.from_pretrained(model_name)).cuda()
 
 
 def get_num_layers(config):
@@ -69,6 +77,18 @@ def is_roberta_tokenizer(tokenizer):
     return isinstance(tokenizer, RobertaTokenizer)
 
 
+def is_electra_tokenizer(tokenizer):
+    return isinstance(tokenizer, ElectraTokenizer)
+
+
+def is_t5_tokenizer(tokenizer):
+    return isinstance(tokenizer, T5Tokenizer)
+
+
+def is_llama3_tokenizer(tokenizer):
+    return isinstance(tokenizer, PreTrainedTokenizerFast)
+
+
 def get_tokenized_word(tokenizer, word: str, index: int):
     if (
         is_pythia_tokenizer(tokenizer)
@@ -80,6 +100,12 @@ def get_tokenized_word(tokenizer, word: str, index: int):
         return tokenizer(word).input_ids
     elif is_llama_tokenizer(tokenizer):
         assert tokenizer.add_bos_token
+        input_ids = tokenizer(word).input_ids
+        assert input_ids.pop(0) == tokenizer.bos_token_id
+        return input_ids
+    elif is_llama3_tokenizer(tokenizer):
+        if index:
+            word = " " + word
         input_ids = tokenizer(word).input_ids
         assert input_ids.pop(0) == tokenizer.bos_token_id
         return input_ids
@@ -95,6 +121,19 @@ def get_tokenized_word(tokenizer, word: str, index: int):
             word = " " + word
         input_ids = tokenizer(word).input_ids
         assert input_ids.pop(0) == tokenizer.bos_token_id
+        assert input_ids.pop() == tokenizer.eos_token_id
+        return input_ids
+    elif is_electra_tokenizer(tokenizer):
+        if index:
+            word = " " + word
+        input_ids = tokenizer(word).input_ids
+        assert input_ids.pop(0) == tokenizer.cls_token_id
+        assert input_ids.pop() == tokenizer.sep_token_id
+        return input_ids
+    elif is_t5_tokenizer(tokenizer):
+        if index:
+            word = " " + word
+        input_ids = tokenizer(word).input_ids
         assert input_ids.pop() == tokenizer.eos_token_id
         return input_ids
     assert isinstance(tokenizer, GPT2Tokenizer)

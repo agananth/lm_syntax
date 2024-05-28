@@ -5,6 +5,8 @@ import os
 import stanza_cache
 import dataclasses
 from collections.abc import Sequence, Mapping
+from stanza.models.constituency import parse_tree, tree_reader
+
 
 _HIDDEN_STATE_CACHE_DIR = "/scr/biggest/ananthag/hidden_states"
 
@@ -80,7 +82,7 @@ class HeadWordDataset(Dataset):
             os.path.join(
                 _HIDDEN_STATE_CACHE_DIR,
                 model_name.replace("/", "_"),
-                f"layers_0_{num_layers}",
+                # f"layers_0_{num_layers}",
                 f"{split_name}.dat",
             ),
             "float32",

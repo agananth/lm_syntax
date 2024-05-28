@@ -1,6 +1,10 @@
 """Cloned from https://github.com/MurtyShikhar/Pushdown-Layers/blob/main/eval_utils/eval_surprisal.py and kept what is needed to run on base HF models."""
 
-from transformers import AutoModelForCausalLM, AutoModelForMaskedLM
+from transformers import (
+    AutoModelForCausalLM,
+    AutoModelForMaskedLM,
+    AutoModelForSeq2SeqLM,
+)
 import numpy as np
 import re
 import json
@@ -17,10 +21,7 @@ import argparse
 
 
 def eval_math_expr(expr):
-    # try:
     return eval(expr)
-    # except:
-    # return math.nan
 
 
 class TestSuiteParser:
@@ -162,21 +163,100 @@ class Evaluator:
             st = en_curr
 
         input_ids = tokenized.input_ids
-        attention_mask = tokenized.attention_mask
         seq_length = input_ids.shape[1]
 
         masked_input_ids = input_ids.repeat(seq_length, 1)
-        masked_attention_mask = attention_mask.repeat(seq_length, 1)
-        masked_input_ids.fill_diagonal_(self.tokenizer.mask_token_id)
+        extra_mask_tokens = 32
+        masked_input_ids = torch.cat(
+            (
+                masked_input_ids[:, :-1],
+                torch.ones(seq_length, extra_mask_tokens, dtype=int).to("cuda"),
+                masked_input_ids[:, None, -1],
+            ),
+            dim=-1,
+        )
+        mask_token_mask = torch.triu(
+            torch.ones(seq_length, seq_length + extra_mask_tokens, dtype=bool)
+        )
+        assert mask_token_mask.shape == masked_input_ids.shape
+        mask_token_mask[torch.arange(seq_length - 1), -1] = False
+        masked_input_ids[mask_token_mask] = self.tokenizer.mask_token_id
+        masked_attention_mask = torch.ones_like(masked_input_ids)
 
         with torch.inference_mode():
             all_sent_logprobs = self.lm(
-                masked_input_ids, attention_mask=torch.tril(masked_attention_mask)
+                masked_input_ids,
+                attention_mask=masked_attention_mask,
             ).logits
         log_probs = F.log_softmax(all_sent_logprobs, dim=-1)
         token_log_probs = log_probs[
             torch.arange(seq_length), torch.arange(seq_length), input_ids.squeeze()
         ]
+        assert token_log_probs.shape == (seq_length,)
+        target_surprisals = [
+            -1.0 * torch.sum(token_log_probs[st:en], dim=0).item()
+            for st, en in all_target_idxs
+        ]
+
+        return target_surprisals
+
+    def get_surprisals_encoder_decoder(self, regions, verbose=False):
+        sent = " ".join([r.lstrip().rstrip() for r in regions if len(r) > 0])
+        tokenized = self.tokenizer(sent, return_tensors="pt").to("cuda")
+
+        all_target_idxs = []
+        st = 0
+        sent_tokens = tokenized.input_ids[0].tolist()
+        for idx, region in enumerate(regions):
+            region = region.lstrip().rstrip()
+            if not region:
+                all_target_idxs.append((st, st))
+                continue
+            word_tokenized = utils.get_tokenized_word(self.tokenizer, region, idx)
+            st_curr, en_curr = utils.get_idxs(word_tokenized, sent_tokens, st)
+            all_target_idxs.append((st_curr, en_curr))
+            st = en_curr
+
+        input_ids = tokenized.input_ids
+        attention_mask = tokenized.attention_mask
+        seq_length = input_ids.shape[1]
+
+        mask_token = self.tokenizer.convert_tokens_to_ids(
+            self.tokenizer.additional_special_tokens[0]
+        )
+
+        masked_input_ids = input_ids.repeat(seq_length, 1)
+        for i in range(seq_length):
+            for j in range(i, seq_length):
+                if j == seq_length - 1 and i != seq_length - 1:
+                    continue
+                masked_input_ids[i, j] = self.tokenizer.additional_special_tokens_ids[
+                    j - i
+                ]
+        # print(masked_input_ids)
+        # masked_input_ids.fill_diagonal_(mask_token)
+        # masked_input_ids[torch.arange(seq_length - 1), torch.arange(1, seq_length)] = (
+        #     self.tokenizer.eos_token_id
+        # )
+        masked_attention_mask = attention_mask.repeat(seq_length, 1)
+        # masked_attention_mask = torch.tril(masked_attention_mask, diagonal=1)
+
+        decoder_input_ids = (
+            torch.tensor([[self.lm.config.decoder_start_token_id, mask_token]])
+            .expand(seq_length, 2)
+            .to("cuda")
+        )
+
+        with torch.inference_mode():
+            all_sent_logprobs = self.lm(
+                input_ids=masked_input_ids,
+                attention_mask=masked_attention_mask,
+                decoder_input_ids=decoder_input_ids,
+            ).logits
+
+        log_probs = F.log_softmax(all_sent_logprobs, dim=-1)
+        token_log_probs = log_probs[torch.arange(seq_length), 1, input_ids.squeeze()]
+
         target_surprisals = [
             -1.0 * torch.sum(token_log_probs[st:en], dim=0).item()
             for st, en in all_target_idxs
@@ -193,6 +273,9 @@ def main(parser):
     elif args.decoders:
         auto_model_f = AutoModelForCausalLM
         model_names = args.decoders
+    elif args.encoder_decoders:
+        auto_model_f = AutoModelForSeq2SeqLM
+        model_names = args.encoder_decoders
     else:
         raise ValueError()
     test_suite_dir = "sg_test_suites"
@@ -210,7 +293,8 @@ def main(parser):
 
             eval_obj = Evaluator(lm, tokenizer)
 
-            for file_name in os.listdir(test_suite_dir):
+            for file_name in os.listdir(test_suite_dir):  # os.listdir(test_suite_dir):
+                print("Running", file_name)
                 test_suite_parser = TestSuiteParser(
                     os.path.join(test_suite_dir, file_name)
                 )
@@ -218,6 +302,7 @@ def main(parser):
 
                 acc = 0.0
                 for i, formula in enumerate(test_suite_parser.answers):
+                    # print(formula)
                     result = eval_math_expr(formula)
                     acc += result
                     # if not bool(result):
@@ -235,7 +320,7 @@ def main(parser):
                 print(acc)
 
             lm = model_name.replace("/", "-")
-            output_json = f"surprisals/{lm}_encoder_causal.json"
+            output_json = f"surprisals/{lm}.json"
             with open(output_json, "w") as f:
                 json.dump(results, f)
 

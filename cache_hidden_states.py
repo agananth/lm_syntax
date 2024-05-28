@@ -1,41 +1,25 @@
 import argparse
 import os
-from collections.abc import Sequence
+from collections.abc import Sequence, Mapping
 
 import numpy as np
 import torch
-from stanza.models.constituency import parse_tree, tree_reader
 from tqdm import tqdm
-from transformers import (
-    AutoModel,
-    AutoTokenizer,
-    GPT2Tokenizer,
-    GPTNeoXTokenizerFast,
-    LlamaTokenizer,
-    set_seed,
-)
+import dataclasses
+
+from transformers import set_seed
 import utils
+import stanza_cache
+from stanza.models.constituency import parse_tree
+
 
 set_seed(42)
 
 
-def _get_tokenizer(model_name: str):
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_name, use_fast="pythia" in model_name
-    )
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    return tokenizer
-
-
-def _get_model(model_name: str):
-    return AutoModel.from_pretrained(model_name).cuda()
-
-
-def _get_num_layers(model: AutoModel):
-    if hasattr(model.config, "n_layer"):
-        return model.config.n_layer
-    return model.config.num_hidden_layers
+@dataclasses.dataclass
+class DepParseDataPickle:
+    input_strs: Sequence[str]
+    dev_data: Sequence[Mapping[(str, str)]]
 
 
 def get_idxs(phrase_tokens, sent_tokens, st):
@@ -113,31 +97,32 @@ def _get_sentences_from_trees(trees: Sequence[parse_tree.Tree]) -> Sequence[str]
 def main(parser):
     args = parser.parse_args()
 
-    train_trees = tree_reader.read_treebank(
-        "/juice/scr/horatio/data/constituency/en_ptb3-revised_train.mrg"
+    train_input_strs = _get_sentences_from_trees(
+        stanza_cache.cached_ptb_train_sentences()
     )
-    train_input_strs = _get_sentences_from_trees(train_trees)
-
-    dev_trees = tree_reader.read_treebank(
-        "/juice/scr/horatio/data/constituency/en_ptb3-revised_dev.mrg"
+    dev_input_strs = _get_sentences_from_trees(stanza_cache.cached_ptb_dev_sentences())
+    test_input_strs = _get_sentences_from_trees(
+        stanza_cache.cached_ptb_test_sentences()
     )
-    dev_input_strs = _get_sentences_from_trees(dev_trees)
-
-    test_trees = tree_reader.read_treebank(
-        "/juice/scr/horatio/data/constituency/en_ptb3-revised_test.mrg"
-    )
-    test_input_strs = _get_sentences_from_trees(test_trees)
 
     batch_size = args.batch_size
     model_name = args.model
-    tokenizer = _get_tokenizer(model_name)
-    model = _get_model(model_name)
+    tokenizer = utils.get_tokenizer(model_name)
+    if args.random_model:
+        print("Using random model")
+        model = utils.get_model_base_weights(model_name)
+    else:
+        print("Using pretrained model")
+        model = utils.get_model(model_name)
     model.eval()
-    num_layers = _get_num_layers(model)
+    num_layers = utils.get_num_layers(model.config)
     hidden_size = model.config.hidden_size
 
     folder_path = os.path.join(
-        "/nlp/scr/ananthag/", "hidden_states", model_name.replace("/", "_")
+        "/scr/biggest/ananthag",
+        "hidden_states",
+        "random" if args.random_model else "",
+        model_name.replace("/", "_"),
     )
     if os.path.exists(folder_path):
         os.rmdir(folder_path)
@@ -187,5 +172,6 @@ if __name__ == "__main__":
         "--model", "-m", type=str, required=True, help="HF base model name"
     )
     parser.add_argument("--batch_size", type=int, default=512)
+    parser.add_argument("--random_model", action="store_true")
 
     main(parser)
