@@ -72,7 +72,7 @@ class TestSuiteParser:
         examples = self.get_example(idx)
         phen2surprisals = {}
         for phen in examples:
-            target_surprisals = evaluator.get_surprisals_encoder(examples[phen])
+            target_surprisals = evaluator(examples[phen])
             if verbose:
                 print("Regions: {}".format(examples[phen]))
                 print(target_surprisals)
@@ -96,15 +96,7 @@ class Evaluator:
         self.lm = lm
         self.tokenizer = tokenizer
 
-    def get_surprisals(self, regions, verbose=False):
-        """
-        regions: a list of regions which when concatenated with a period and
-        processed by the preprocessor, gives a valid input to the language model
-        but some regions can be empty, so we need to take care of that
-        """
-        sent = " ".join([r.lstrip().rstrip() for r in regions if len(r) > 0])
-        tokenized = self.tokenizer(sent, return_tensors="pt").to("cuda")
-
+    def _get_all_target_idxs(self, regions, tokenized):
         all_target_idxs = []
         st = 0
         sent_tokens = tokenized.input_ids[0].tolist()
@@ -117,6 +109,18 @@ class Evaluator:
             st_curr, en_curr = utils.get_idxs(word_tokenized, sent_tokens, st)
             all_target_idxs.append((st_curr, en_curr))
             st = en_curr
+        return all_target_idxs
+
+    def get_surprisals_decoder(self, regions):
+        """
+        regions: a list of regions which when concatenated with a period and
+        processed by the preprocessor, gives a valid input to the language model
+        but some regions can be empty, so we need to take care of that
+        """
+        sent = " ".join([r.lstrip().rstrip() for r in regions if len(r) > 0])
+        tokenized = self.tokenizer(sent, return_tensors="pt").to("cuda")
+        all_target_idxs = self._get_all_target_idxs(regions, tokenized)
+
         with torch.inference_mode():
             all_sent_logprobs = self.lm(**tokenized).logits
         targets = torch.cat(
@@ -140,7 +144,7 @@ class Evaluator:
 
         return target_surprisals
 
-    def get_surprisals_encoder(self, regions, verbose=False):
+    def get_surprisals_encoder(self, regions):
         """
         regions: a list of regions which when concatenated with a period and
         processed by the preprocessor, gives a valid input to the language model
@@ -148,25 +152,13 @@ class Evaluator:
         """
         sent = " ".join([r.lstrip().rstrip() for r in regions if len(r) > 0])
         tokenized = self.tokenizer(sent, return_tensors="pt").to("cuda")
-
-        all_target_idxs = []
-        st = 0
-        sent_tokens = tokenized.input_ids[0].tolist()
-        for idx, region in enumerate(regions):
-            region = region.lstrip().rstrip()
-            if not region:
-                all_target_idxs.append((st, st))
-                continue
-            word_tokenized = utils.get_tokenized_word(self.tokenizer, region, idx)
-            st_curr, en_curr = utils.get_idxs(word_tokenized, sent_tokens, st)
-            all_target_idxs.append((st_curr, en_curr))
-            st = en_curr
+        all_target_idxs = self._get_all_target_idxs(regions, tokenized)
 
         input_ids = tokenized.input_ids
         seq_length = input_ids.shape[1]
-
         masked_input_ids = input_ids.repeat(seq_length, 1)
-        extra_mask_tokens = 32
+
+        extra_mask_tokens = 8
         masked_input_ids = torch.cat(
             (
                 masked_input_ids[:, :-1],
@@ -200,22 +192,10 @@ class Evaluator:
 
         return target_surprisals
 
-    def get_surprisals_encoder_decoder(self, regions, verbose=False):
+    def get_surprisals_encoder_decoder(self, regions):
         sent = " ".join([r.lstrip().rstrip() for r in regions if len(r) > 0])
         tokenized = self.tokenizer(sent, return_tensors="pt").to("cuda")
-
-        all_target_idxs = []
-        st = 0
-        sent_tokens = tokenized.input_ids[0].tolist()
-        for idx, region in enumerate(regions):
-            region = region.lstrip().rstrip()
-            if not region:
-                all_target_idxs.append((st, st))
-                continue
-            word_tokenized = utils.get_tokenized_word(self.tokenizer, region, idx)
-            st_curr, en_curr = utils.get_idxs(word_tokenized, sent_tokens, st)
-            all_target_idxs.append((st_curr, en_curr))
-            st = en_curr
+        all_target_idxs = self._get_all_target_idxs(regions, tokenized)
 
         input_ids = tokenized.input_ids
         attention_mask = tokenized.attention_mask
@@ -226,6 +206,15 @@ class Evaluator:
         )
 
         masked_input_ids = input_ids.repeat(seq_length, 1)
+        extra_mask_tokens = 8
+        masked_input_ids = torch.cat(
+            (
+                masked_input_ids[:, :-1],
+                torch.ones(seq_length, extra_mask_tokens, dtype=int).to("cuda"),
+                masked_input_ids[:, None, -1],
+            ),
+            dim=-1,
+        )
         for i in range(seq_length):
             for j in range(i, seq_length):
                 if j == seq_length - 1 and i != seq_length - 1:
@@ -233,7 +222,7 @@ class Evaluator:
                 masked_input_ids[i, j] = self.tokenizer.additional_special_tokens_ids[
                     j - i
                 ]
-        # print(masked_input_ids)
+        print(masked_input_ids)
         # masked_input_ids.fill_diagonal_(mask_token)
         # masked_input_ids[torch.arange(seq_length - 1), torch.arange(1, seq_length)] = (
         #     self.tokenizer.eos_token_id
@@ -270,12 +259,15 @@ def main(parser):
     if args.encoders:
         auto_model_f = AutoModelForMaskedLM
         model_names = args.encoders
+        eval_fn_name = "get_surprisals_encoder"
     elif args.decoders:
         auto_model_f = AutoModelForCausalLM
         model_names = args.decoders
+        eval_fn_name = "get_surprisals_decoder"
     elif args.encoder_decoders:
         auto_model_f = AutoModelForSeq2SeqLM
         model_names = args.encoder_decoders
+        eval_fn_name = "get_surprisals_encoder_decoder"
     else:
         raise ValueError()
     test_suite_dir = "sg_test_suites"
@@ -293,12 +285,12 @@ def main(parser):
 
             eval_obj = Evaluator(lm, tokenizer)
 
-            for file_name in os.listdir(test_suite_dir):  # os.listdir(test_suite_dir):
+            for file_name in os.listdir(test_suite_dir):
                 print("Running", file_name)
                 test_suite_parser = TestSuiteParser(
                     os.path.join(test_suite_dir, file_name)
                 )
-                test_suite_parser.evaluate_all(eval_obj)
+                test_suite_parser.evaluate_all(getattr(eval_obj, eval_fn_name))
 
                 acc = 0.0
                 for i, formula in enumerate(test_suite_parser.answers):

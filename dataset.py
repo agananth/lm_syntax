@@ -66,6 +66,7 @@ class HeadWordDataset(Dataset):
         model_name: str,
         num_layers: int,
         hidden_size: int,
+        random_weights: bool,
     ):
         data = getattr(stanza_cache, f"cached_ptb_{split_name}")()
         self.start_indices = {}
@@ -81,6 +82,7 @@ class HeadWordDataset(Dataset):
         self.hidden_state_cache = np.memmap(
             os.path.join(
                 _HIDDEN_STATE_CACHE_DIR,
+                "random" if random_weights else "",
                 model_name.replace("/", "_"),
                 # f"layers_0_{num_layers}",
                 f"{split_name}.dat",

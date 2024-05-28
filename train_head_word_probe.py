@@ -17,6 +17,7 @@ from einops import rearrange
 import train
 import numpy as np
 import copy
+import constants
 
 
 @dataclasses.dataclass
@@ -195,7 +196,12 @@ def main(parser):
     model_name = args.model
 
     tokenizer = utils.get_tokenizer(model_name)
-    model = utils.get_model(model_name)
+    if args.random_model:
+        print("Using random model")
+        model = utils.get_model_base_weights(model_name)
+    else:
+        print("Using pretrained model")
+        model = utils.get_model(model_name)
     num_layers = utils.get_num_layers(model.config)
     model.eval()
     hidden_size = model.config.hidden_size
@@ -226,6 +232,7 @@ def main(parser):
             model_name=model_name,
             num_layers=num_layers,
             hidden_size=model.config.hidden_size,
+            random_weights=args.random_model
         ),
         batch_size=1,
         shuffle=True,
@@ -237,12 +244,13 @@ def main(parser):
             model_name=model_name,
             num_layers=num_layers,
             hidden_size=model.config.hidden_size,
+            random_weights=args.random_model
         ),
         batch_size=1,
         shuffle=False,
     )
 
-    wandb.init(project="Head Word Final 2", name=model_name, config=config)
+    wandb.init(project=constants.WANDB_HEAD_WORD_RANDOM_MODEL_PROJECT_NAME if args.random_model else constants.WANDB_HEAD_WORD_PROJECT_NAME, name=model_name, config=config)
 
     probe_train_states = []
     for layer in range(num_layers):
@@ -277,6 +285,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model", "-m", type=str, required=True, help="HF base model name"
     )
+    parser.add_argument("--random_model", action="store_true")
     parser.add_argument("-batch_size", type=int, default=1024)
     parser.add_argument("-lr", type=float, default=1e-2)
     parser.add_argument("-max_epochs", type=int, default=50)

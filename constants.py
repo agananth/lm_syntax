@@ -1,0 +1,2 @@
+WANDB_HEAD_WORD_PROJECT_NAME = "Head Word Final 2"
+WANDB_HEAD_WORD_RANDOM_MODEL_PROJECT_NAME = "Head Word Final w Base Weights"
