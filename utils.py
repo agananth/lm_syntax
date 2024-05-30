@@ -37,7 +37,11 @@ def get_model(model_name: str):
 def get_model_base_weights(model_name: str):
     if "google-t5" in model_name:
         return T5EncoderModel.from_config(AutoConfig.from_pretrained(model_name)).cuda()
-    return AutoModel.from_config(AutoConfig.from_pretrained(model_name)).cuda()
+    return AutoModel.from_config(
+        AutoConfig.from_pretrained(
+            model_name, token="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"
+        )
+    ).cuda()
 
 
 def get_num_layers(config):

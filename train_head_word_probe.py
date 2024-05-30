@@ -18,6 +18,9 @@ import train
 import numpy as np
 import copy
 import constants
+from transformers import set_seed
+
+set_seed(64)
 
 
 @dataclasses.dataclass

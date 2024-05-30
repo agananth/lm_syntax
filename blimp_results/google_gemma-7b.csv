@@ -1,0 +1,7 @@
+file_name,accuracy
+adjunct_island.jsonl,0.851
+anaphor_gender_agreement.jsonl,0.946
+anaphor_number_agreement.jsonl,0.954
+animate_subject_passive.jsonl,0.755
+animate_subject_trans.jsonl,0.841
+causative.jsonl,0.673
