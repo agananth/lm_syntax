@@ -75,6 +75,7 @@ def main(parser):
         flattened_labels = []
         flattened_preds = [[] for _ in range(num_layers)]
         flattened_relns = []
+        flattened_directions = []
         for batch in data_loader:
             hidden_states, labels_and_relns = batch
             labels, relns = zip(*labels_and_relns)
@@ -85,6 +86,14 @@ def main(parser):
             flattened_labels.extend(labels.tolist())
             labels = labels.cuda()
             flattened_relns.extend(relns)
+            for position, l in enumerate(labels):
+                if l == position:
+                    flattened_directions.append("SELF")
+                elif l < position:
+                    flattened_directions.append("left")
+                else:
+                    flattened_directions.append("right")
+
             for layer, probe in enumerate(probes):
                 with torch.inference_mode():
                     logits = probe(hidden_states[layer])
@@ -106,12 +115,24 @@ def main(parser):
         best_preds = flattened_preds[best_layer]
         total_counter = collections.Counter()
         correct_counter = collections.Counter()
-        for label, pred, reln in zip(flattened_labels, best_preds, flattened_relns):
+        for label, pred, reln, direction in zip(
+            flattened_labels, best_preds, flattened_relns, flattened_directions
+        ):
             if reln == "ROOT":
                 continue
             total_counter[reln] += 1
+            total_counter[direction] += 1
+            if reln == "nmod" and direction == "left":
+                total_counter["nmod_left"] += 1
+            elif reln == "nmod" and direction == "right":
+                total_counter["nmod_right"] += 1
             if label == pred:
                 correct_counter[reln] += 1
+                correct_counter[direction] += 1
+                if reln == "nmod" and direction == "left":
+                    correct_counter["nmod_left"] += 1
+                elif reln == "nmod" and direction == "right":
+                    correct_counter["nmod_right"] += 1
 
         for reln in total_counter.keys():
             run.summary[f"{reln}_total"] = total_counter[reln]

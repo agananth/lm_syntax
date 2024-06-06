@@ -216,19 +216,14 @@ class Evaluator:
             dim=-1,
         )
         for i in range(seq_length):
-            for j in range(i, seq_length):
-                if j == seq_length - 1 and i != seq_length - 1:
+            for j in range(i, masked_input_ids.shape[1]):
+                if j == masked_input_ids.shape[1] - 1 and i != seq_length - 1:
                     continue
                 masked_input_ids[i, j] = self.tokenizer.additional_special_tokens_ids[
                     j - i
                 ]
-        print(masked_input_ids)
-        # masked_input_ids.fill_diagonal_(mask_token)
-        # masked_input_ids[torch.arange(seq_length - 1), torch.arange(1, seq_length)] = (
-        #     self.tokenizer.eos_token_id
-        # )
-        masked_attention_mask = attention_mask.repeat(seq_length, 1)
-        # masked_attention_mask = torch.tril(masked_attention_mask, diagonal=1)
+
+        masked_attention_mask = torch.ones_like(masked_input_ids)
 
         decoder_input_ids = (
             torch.tensor([[self.lm.config.decoder_start_token_id, mask_token]])
@@ -300,7 +295,7 @@ def main(parser):
                     # if not bool(result):
                     #     writer.writerow(
                     #         dict(
-                    #             model=model,
+                    #             model=model_name,
                     #             file_name=file_name,
                     #             item_number=i + 1,
                     #             formula=formula,

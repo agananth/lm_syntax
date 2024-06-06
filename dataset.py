@@ -139,10 +139,43 @@ class HeadWordDatasetWithRelns(HeadWordDataset):
                 _HIDDEN_STATE_CACHE_DIR,
                 "random" if random_weights else "",
                 model_name.replace("/", "_"),
-                # f"layers_0_{num_layers}",
+                f"layers_0_{num_layers}",
                 f"{split_name}.dat",
             ),
             "float32",
             mode="r",
             shape=(total_words, num_layers, hidden_size),
         )
+
+
+class SyntaxGymHeadWordDataset(Dataset):
+
+    def __init__(self, data):
+        self.words = []
+        self.labels = []
+        for dev_data in data:
+            word_list = []
+            label_list = []
+            for word, head, reln in zip(
+                dev_data["words"], dev_data["heads"], dev_data["relns"]
+            ):
+                word_list.append(word)
+                label_list.append((head, reln))
+            self.words.append(word_list)
+            self.labels.append(label_list)
+
+    def __len__(self):
+        """
+        Returns the length of the dataset.
+        """
+        return len(self.words)
+
+    def __getitem__(self, idx):
+        """
+        Args:
+            idx (int): Index of the data point.
+
+        Returns:
+            (Any, Any): A tuple containing the data sample and its label (or any relevant information)
+        """
+        return self.words[idx], self.labels[idx]
