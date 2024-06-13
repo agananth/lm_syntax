@@ -20,6 +20,39 @@ import csv
 import argparse
 
 
+_FILES_TO_APPLY_EXTRA_MASKS = {
+    "center_embed_mod.json",
+    "center_embed.json",
+    "cleft_modifier.json",
+    "cleft.json",
+    "fgd_pp.json",
+    "fgd-embed3.json",
+    "fgd-embed4.json",
+    "nn-nv-rpl.json",
+    "npi_orc_any.json",
+    "npi_orc_ever.json",
+    "npi_src_any.json",
+    "npi_src_ever.json",
+    "npz_ambig_mod.json",
+    "npz_ambig.json",
+    "npz_obj_mod.json",
+    "npz_obj.json",
+    "number_orc.json",
+    "number_prep.json",
+    "number_src.json",
+    "reflexive_orc_fem.json",
+    "reflexive_orc_masc.json",
+    "reflexive_prep_fem.json",
+    "reflexive_prep_masc.json",
+    "reflexive_src_fem.json",
+    "reflexive_src_masc.json",
+    "subordination_orc-orc.json",
+    "subordination_pp-pp.json",
+    "subordination_src-src.json",
+    "subordination.json",
+}
+
+
 def eval_math_expr(expr):
     return eval(expr)
 
@@ -79,6 +112,7 @@ class TestSuiteParser:
             phen2surprisals[phen] = target_surprisals
 
         extracted_formula = self.extract_formulas(phen2surprisals)
+        # print(extracted_formula)
         self.answers[idx] = extracted_formula
 
     def evaluate_all(self, evaluator):
@@ -92,9 +126,11 @@ class Evaluator:
         self,
         lm,
         tokenizer,
+        extra_encoder_mask_tokens=0,
     ):
         self.lm = lm
         self.tokenizer = tokenizer
+        self.extra_encoder_mask_tokens = extra_encoder_mask_tokens
 
     def _get_all_target_idxs(self, regions, tokenized):
         all_target_idxs = []
@@ -156,35 +192,44 @@ class Evaluator:
 
         input_ids = tokenized.input_ids
         seq_length = input_ids.shape[1]
-        masked_input_ids = input_ids.repeat(seq_length, 1)
+        original_masked_input_ids = input_ids.repeat(seq_length, 1)
 
-        extra_mask_tokens = 8
-        masked_input_ids = torch.cat(
-            (
-                masked_input_ids[:, :-1],
-                torch.ones(seq_length, extra_mask_tokens, dtype=int).to("cuda"),
-                masked_input_ids[:, None, -1],
-            ),
-            dim=-1,
-        )
-        mask_token_mask = torch.triu(
-            torch.ones(seq_length, seq_length + extra_mask_tokens, dtype=bool)
-        )
-        assert mask_token_mask.shape == masked_input_ids.shape
-        mask_token_mask[torch.arange(seq_length - 1), -1] = False
-        masked_input_ids[mask_token_mask] = self.tokenizer.mask_token_id
-        masked_attention_mask = torch.ones_like(masked_input_ids)
+        all_log_probs = []
+        for extra_mask_tokens in range(self.extra_encoder_mask_tokens + 1):
+            masked_input_ids = torch.cat(
+                (
+                    original_masked_input_ids[:, :-1],
+                    torch.ones(seq_length, extra_mask_tokens, dtype=int).to("cuda"),
+                    original_masked_input_ids[:, None, -1],
+                ),
+                dim=-1,
+            )
+            mask_token_mask = torch.triu(
+                torch.ones(seq_length, seq_length + extra_mask_tokens, dtype=bool)
+            )
+            assert mask_token_mask.shape == masked_input_ids.shape
+            mask_token_mask[torch.arange(seq_length - 1), -1] = False
+            masked_input_ids[mask_token_mask] = self.tokenizer.mask_token_id
+            masked_attention_mask = torch.ones_like(masked_input_ids)
 
-        with torch.inference_mode():
-            all_sent_logprobs = self.lm(
-                masked_input_ids,
-                attention_mask=masked_attention_mask,
-            ).logits
-        log_probs = F.log_softmax(all_sent_logprobs, dim=-1)
-        token_log_probs = log_probs[
-            torch.arange(seq_length), torch.arange(seq_length), input_ids.squeeze()
-        ]
-        assert token_log_probs.shape == (seq_length,)
+            with torch.inference_mode():
+                all_sent_logprobs = self.lm(
+                    masked_input_ids,
+                    attention_mask=masked_attention_mask,
+                ).logits
+            log_probs = F.log_softmax(all_sent_logprobs, dim=-1)
+
+            token_log_probs = log_probs[
+                torch.arange(seq_length), torch.arange(seq_length), input_ids.squeeze()
+            ].unsqueeze(0)
+            assert token_log_probs.shape == (1, seq_length)
+            all_log_probs.append(token_log_probs)
+        all_log_probs = torch.cat(all_log_probs, dim=0).cpu()
+        assert all_log_probs.shape == (self.extra_encoder_mask_tokens + 1, seq_length)
+        all_log_probs += torch.log(
+            torch.tensor(1.0 / (self.extra_encoder_mask_tokens + 1))
+        )
+        token_log_probs = torch.logsumexp(all_log_probs, dim=0)
         target_surprisals = [
             -1.0 * torch.sum(token_log_probs[st:en], dim=0).item()
             for st, en in all_target_idxs
@@ -204,43 +249,54 @@ class Evaluator:
         mask_token = self.tokenizer.convert_tokens_to_ids(
             self.tokenizer.additional_special_tokens[0]
         )
+        original_masked_input_ids = input_ids.repeat(seq_length, 1)
 
-        masked_input_ids = input_ids.repeat(seq_length, 1)
-        extra_mask_tokens = 8
-        masked_input_ids = torch.cat(
-            (
-                masked_input_ids[:, :-1],
-                torch.ones(seq_length, extra_mask_tokens, dtype=int).to("cuda"),
-                masked_input_ids[:, None, -1],
-            ),
-            dim=-1,
+        all_log_probs = []
+        for extra_mask_tokens in range(self.extra_encoder_mask_tokens + 1):
+            masked_input_ids = torch.cat(
+                (
+                    original_masked_input_ids[:, :-1],
+                    torch.ones(seq_length, extra_mask_tokens, dtype=int).to("cuda"),
+                    original_masked_input_ids[:, None, -1],
+                ),
+                dim=-1,
+            )
+            for i in range(seq_length):
+                for j in range(i, masked_input_ids.shape[1]):
+                    if j == masked_input_ids.shape[1] - 1 and i != seq_length - 1:
+                        continue
+                    masked_input_ids[i, j] = (
+                        self.tokenizer.additional_special_tokens_ids[j - i]
+                    )
+
+            masked_attention_mask = torch.ones_like(masked_input_ids)
+
+            decoder_input_ids = (
+                torch.tensor([[self.lm.config.decoder_start_token_id, mask_token]])
+                .expand(seq_length, 2)
+                .to("cuda")
+            )
+
+            with torch.inference_mode():
+                all_sent_logprobs = self.lm(
+                    input_ids=masked_input_ids,
+                    attention_mask=masked_attention_mask,
+                    decoder_input_ids=decoder_input_ids,
+                ).logits
+
+            log_probs = F.log_softmax(all_sent_logprobs, dim=-1)
+            token_log_probs = log_probs[
+                torch.arange(seq_length), 1, input_ids.squeeze()
+            ].unsqueeze(0)
+            assert token_log_probs.shape == (1, seq_length)
+            all_log_probs.append(token_log_probs)
+
+        all_log_probs = torch.cat(all_log_probs, dim=0).cpu()
+        assert all_log_probs.shape == (self.extra_encoder_mask_tokens + 1, seq_length)
+        all_log_probs += torch.log(
+            torch.tensor(1.0 / (self.extra_encoder_mask_tokens + 1))
         )
-        for i in range(seq_length):
-            for j in range(i, masked_input_ids.shape[1]):
-                if j == masked_input_ids.shape[1] - 1 and i != seq_length - 1:
-                    continue
-                masked_input_ids[i, j] = self.tokenizer.additional_special_tokens_ids[
-                    j - i
-                ]
-
-        masked_attention_mask = torch.ones_like(masked_input_ids)
-
-        decoder_input_ids = (
-            torch.tensor([[self.lm.config.decoder_start_token_id, mask_token]])
-            .expand(seq_length, 2)
-            .to("cuda")
-        )
-
-        with torch.inference_mode():
-            all_sent_logprobs = self.lm(
-                input_ids=masked_input_ids,
-                attention_mask=masked_attention_mask,
-                decoder_input_ids=decoder_input_ids,
-            ).logits
-
-        log_probs = F.log_softmax(all_sent_logprobs, dim=-1)
-        token_log_probs = log_probs[torch.arange(seq_length), 1, input_ids.squeeze()]
-
+        token_log_probs = torch.logsumexp(all_log_probs, dim=0)
         target_surprisals = [
             -1.0 * torch.sum(token_log_probs[st:en], dim=0).item()
             for st, en in all_target_idxs
@@ -278,10 +334,12 @@ def main(parser):
             lm.eval()
             tokenizer = utils.get_tokenizer(model_name)
 
-            eval_obj = Evaluator(lm, tokenizer)
-
             for file_name in os.listdir(test_suite_dir):
                 print("Running", file_name)
+                extra_encoder_mask_tokens = (
+                    8 if file_name in _FILES_TO_APPLY_EXTRA_MASKS else 0
+                )
+                eval_obj = Evaluator(lm, tokenizer, extra_encoder_mask_tokens)
                 test_suite_parser = TestSuiteParser(
                     os.path.join(test_suite_dir, file_name)
                 )
@@ -289,7 +347,6 @@ def main(parser):
 
                 acc = 0.0
                 for i, formula in enumerate(test_suite_parser.answers):
-                    # print(formula)
                     result = eval_math_expr(formula)
                     acc += result
                     # if not bool(result):
