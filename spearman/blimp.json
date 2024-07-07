@@ -1,0 +1,54 @@
+{
+    "island_effects": {
+        "correlation": -0.167550010997258,
+        "pvalue": 0.41328255937505387
+    },
+    "anaphor_agreement": {
+        "correlation": 0.4873376969610763,
+        "pvalue": 0.011563947814741694
+    },
+    "s-selection": {
+        "correlation": 0.13914529914529913,
+        "pvalue": 0.49782248280054353
+    },
+    "argument_structure": {
+        "correlation": 0.4892307692307692,
+        "pvalue": 0.011197879945369693
+    },
+    "determiner_noun_agreement": {
+        "correlation": 0.08717948717948718,
+        "pvalue": 0.6719485163676726
+    },
+    "subject_verb_agreement": {
+        "correlation": -0.2930415498462247,
+        "pvalue": 0.14626406339793618
+    },
+    "ellipsis": {
+        "correlation": -0.22256410256410253,
+        "pvalue": 0.2744710297246737
+    },
+    "control_raising": {
+        "correlation": 0.554966669078673,
+        "pvalue": 0.0032542138418234267
+    },
+    "quantifiers": {
+        "correlation": 0.2957264957264957,
+        "pvalue": 0.14243221349119528
+    },
+    "irregular_forms": {
+        "correlation": 0.20037613560080245,
+        "pvalue": 0.3263590339128394
+    },
+    "npi_licensing": {
+        "correlation": -0.24991452991452992,
+        "pvalue": 0.21821062508219669
+    },
+    "binding": {
+        "correlation": 0.6758974358974358,
+        "pvalue": 0.0001508295375796057
+    },
+    "filler_gap_dependency": {
+        "correlation": -0.2594871794871795,
+        "pvalue": 0.2005034472907049
+    }
+}

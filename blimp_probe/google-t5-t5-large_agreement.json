@@ -1,0 +1,1 @@
+{"distractor_agreement_relational_noun.jsonl": {"probe_acc": 0.7584745762711864, "blimp_acc": 0.9449152542372882, "jaccard": 0.2597402597402597, "hamming": 0.2542372881355932, "N": 236}, "distractor_agreement_relative_clause.jsonl": {"probe_acc": 0.4405797101449275, "blimp_acc": 0.7130434782608696, "jaccard": 0.5259259259259259, "hamming": 0.4115942028985507, "N": 345}}

@@ -25,3 +25,18 @@ class BlimpDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.good_sents[idx], self.bad_sents[idx]
+
+
+class BlimpDatasetWithWords(Dataset):
+
+    def __init__(self, file_path: str):
+        self.prefixes = []
+        data = [json.loads(l) for l in open(file_path, encoding="utf-8").readlines()]
+        for example in data:
+            self.prefixes.append(example["one_prefix_word_good"])
+
+    def __len__(self):
+        return len(self.prefixes)
+
+    def __getitem__(self, idx):
+        return self.prefixes[idx]

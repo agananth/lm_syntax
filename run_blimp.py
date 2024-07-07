@@ -15,6 +15,7 @@ import argparse
 import csv
 from blimp_dataset import BlimpDataset
 import utils
+import json
 
 
 def _decoder_log_prob_sum(lm, tokenizer, input_text_batch):
@@ -127,45 +128,65 @@ def main(parser):
         lm = lm.eval().cuda()
         tokenizer = utils.get_tokenizer(model_name)
         aggregate_results = {}
-        with open(
-            f"blimp_results/{model_name.replace('/', '_')}.csv", "w", newline=""
-        ) as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=field_names)
-            writer.writeheader()
-            for file_name in tqdm(sorted(os.listdir("../blimp/data"))):
-                dataset = BlimpDataset(file_path=f"../blimp/data/{file_name}")
-                data_loader = DataLoader(
-                    dataset=dataset,
-                    batch_size=batch_size,
-                    shuffle=False,
-                )
-                correct = 0
-                total = 0
-                for batch in data_loader:
-                    good_sents, bad_sents = batch
-                    good_probs = log_prob_f(lm, tokenizer, good_sents)
-                    bad_probs = log_prob_f(lm, tokenizer, bad_sents)
-                    correct += torch.sum(good_probs > bad_probs).item()
-                    total += len(good_sents)
-                accuracy = correct / total
-                print(file_name, f"Accuracy: {accuracy:.2f}")
-                writer.writerow({"file_name": file_name, "accuracy": accuracy})
-                if dataset.linguistics_term not in aggregate_results:
-                    aggregate_results[dataset.linguistics_term] = []
-                aggregate_results[dataset.linguistics_term].append(accuracy)
-        with open(
-            f"blimp_results/{model_name.replace('/', '_')}_aggregate.csv",
-            "w",
-            newline="",
-        ) as csvfile:
-            writer = csv.DictWriter(
-                csvfile, fieldnames=["linguistics_term", "accuracy"]
+
+        test_suites = (
+            args.file_names if args.file_names else os.listdir("../blimp/data")
+        )
+        file_name_to_accuracy = {}
+        for file_name in tqdm(test_suites):
+            dataset = BlimpDataset(file_path=f"../blimp/data/{file_name}")
+            data_loader = DataLoader(
+                dataset=dataset,
+                batch_size=batch_size,
+                shuffle=False,
             )
-            writer.writeheader()
-            for term, accuracies in aggregate_results.items():
-                writer.writerow(
-                    {"linguistics_term": term, "accuracy": np.mean(accuracies)}
+            correct = 0
+            total = 0
+            correct_list_flattened = []
+            for batch in data_loader:
+                good_sents, bad_sents = batch
+                good_probs = log_prob_f(lm, tokenizer, good_sents)
+                bad_probs = log_prob_f(lm, tokenizer, bad_sents)
+                correct += torch.sum(good_probs > bad_probs).item()
+                total += len(good_sents)
+                correct_list_flattened.extend(
+                    (good_probs > bad_probs).flatten().tolist()
                 )
+            accuracy = correct / total
+            print(file_name, f"Accuracy: {accuracy:.2f}")
+            file_name_to_accuracy[file_name] = accuracy
+            if dataset.linguistics_term not in aggregate_results:
+                aggregate_results[dataset.linguistics_term] = []
+            aggregate_results[dataset.linguistics_term].append(accuracy)
+            if args.file_names:
+                with open(
+                    f"blimp_results/{model_name.replace('/', '_')}_{file_name[:-1]}",
+                    "w",
+                    newline="",
+                ) as preds_file:
+                    json.dump({"correct": correct_list_flattened}, preds_file)
+
+        if not args.file_names:
+            with open(
+                f"blimp_results/{model_name.replace('/', '_')}.csv", "w", newline=""
+            ) as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=field_names)
+                writer.writeheader()
+                for file_name, accuracy in file_name_to_accuracy.items():
+                    writer.writerow({"file_name": file_name, "accuracy": accuracy})
+            with open(
+                f"blimp_results/{model_name.replace('/', '_')}_aggregate.csv",
+                "w",
+                newline="",
+            ) as csvfile:
+                writer = csv.DictWriter(
+                    csvfile, fieldnames=["linguistics_term", "accuracy"]
+                )
+                writer.writeheader()
+                for term, accuracies in aggregate_results.items():
+                    writer.writerow(
+                        {"linguistics_term": term, "accuracy": np.mean(accuracies)}
+                    )
         del lm, tokenizer
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
@@ -176,4 +197,7 @@ if __name__ == "__main__":
     parser.add_argument("--encoders", type=str, nargs="+")
     parser.add_argument("--decoders", type=str, nargs="+")
     parser.add_argument("--encoder_decoders", type=str, nargs="+")
+    parser.add_argument(
+        "--file_names", type=str, help="Specific test suite file", nargs="+"
+    )
     main(parser)

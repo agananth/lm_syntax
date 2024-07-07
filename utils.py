@@ -13,6 +13,7 @@ from transformers import (
     PreTrainedTokenizerFast,
     T5EncoderModel,
 )
+import wandb
 
 
 def get_tokenizer(model_name: str):
@@ -201,3 +202,17 @@ def get_word_hidden_states(input_batch, tokenizer, model):
             word_hs_combined_from_tokens.append(word_level_hidden_states)
         word_level_hs_batch.append(word_hs_combined_from_tokens)
     return word_level_hs_batch
+
+
+def load_probe_for_layer(model_name, layer_idx, hidden_size):
+    api = wandb.Api()
+    v = 1 if ("roberta-base" in model_name or "1B-hf" in model_name) else 0
+    artifact = api.artifact(
+        f"ananthag/Head Word Final 2/{model_name.replace('/', '_')}_probe_layer_{layer_idx}:v{v}"
+    )
+    path = artifact.download() + f"/layer_{layer_idx}.pt"
+    probe = torch.nn.Linear(hidden_size, 256, bias=False)
+    probe.load_state_dict(torch.load(path))
+    probe.eval()
+    probe.cuda()
+    return probe

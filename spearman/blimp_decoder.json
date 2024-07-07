@@ -1,0 +1,54 @@
+{
+    "island_effects": {
+        "correlation": 0.39999999999999997,
+        "pvalue": 0.75
+    },
+    "anaphor_agreement": {
+        "correlation": 0.7999999999999999,
+        "pvalue": 0.3333333333333333
+    },
+    "s-selection": {
+        "correlation": 0.39999999999999997,
+        "pvalue": 0.75
+    },
+    "argument_structure": {
+        "correlation": 0.19999999999999998,
+        "pvalue": 0.9166666666666666
+    },
+    "determiner_noun_agreement": {
+        "correlation": 0.19999999999999998,
+        "pvalue": 0.9166666666666666
+    },
+    "subject_verb_agreement": {
+        "correlation": 0.0,
+        "pvalue": 1.0
+    },
+    "ellipsis": {
+        "correlation": 0.0,
+        "pvalue": 1.0
+    },
+    "control_raising": {
+        "correlation": 0.7999999999999999,
+        "pvalue": 0.3333333333333333
+    },
+    "quantifiers": {
+        "correlation": -0.7999999999999999,
+        "pvalue": 0.3333333333333333
+    },
+    "irregular_forms": {
+        "correlation": 0.7999999999999999,
+        "pvalue": 0.3333333333333333
+    },
+    "npi_licensing": {
+        "correlation": 0.7999999999999999,
+        "pvalue": 0.3333333333333333
+    },
+    "binding": {
+        "correlation": 0.39999999999999997,
+        "pvalue": 0.75
+    },
+    "filler_gap_dependency": {
+        "correlation": 0.7999999999999999,
+        "pvalue": 0.3333333333333333
+    }
+}

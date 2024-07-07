@@ -179,3 +179,58 @@ class SyntaxGymHeadWordDataset(Dataset):
             (Any, Any): A tuple containing the data sample and its label (or any relevant information)
         """
         return self.words[idx], self.labels[idx]
+
+
+class StructuralProbeDataset(Dataset):
+
+    def __init__(
+        self,
+        split_name: str,
+        model_name: str,
+        num_layers: int,
+        hidden_size: int,
+        random_weights: bool,
+    ):
+        data = getattr(stanza_cache, f"cached_ptb_{split_name}")()
+        self.start_indices = {}
+        total_words = 0
+        self.labels = []
+        for i, dev_data in enumerate(data):
+            self.start_indices[i] = total_words
+            label_list = []
+            for head in dev_data["heads"]:
+                total_words += 1
+                label_list.append(head)
+            self.labels.append(label_list)
+        self.hidden_state_cache = np.memmap(
+            os.path.join(
+                _HIDDEN_STATE_CACHE_DIR,
+                "random" if random_weights else "",
+                model_name.replace("/", "_"),
+                # f"layers_0_{num_layers}",
+                f"{split_name}.dat",
+            ),
+            "float32",
+            mode="r",
+            shape=(total_words, num_layers, hidden_size),
+        )
+
+    def __len__(self):
+        """
+        Returns the length of the dataset.
+        """
+        return len(self.start_indices)
+
+    def __getitem__(self, idx):
+        """
+        Args:
+            idx (int): Index of the data point.
+
+        Returns:
+            (Any, Any): A tuple containing the data sample and its label (or any relevant information)
+        """
+        start_index = self.start_indices[idx]
+        return (
+            self.hidden_state_cache[start_index : start_index + len(self.labels[idx])],
+            self.labels[idx],
+        )
